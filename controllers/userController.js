@@ -2,8 +2,8 @@ const { json } = require("express");
 const Post = require("../models/Post");
 const User = require("../models/User");
 const { success, error } = require("../utils/responseWrapper");
-const cloudinary = require('cloudinary').v2;
-const {mapPostOutput} = require('../utils/Utils')
+const cloudinary = require("cloudinary").v2;
+const { mapPostOutput } = require("../utils/Utils");
 
 const followOrUnfollowUserController = async (req, res) => {
     try {
@@ -28,20 +28,15 @@ const followOrUnfollowUserController = async (req, res) => {
 
             const followerIndex = userToFollow.followers.indexOf(curUser);
             userToFollow.followers.splice(followerIndex, 1);
-
-            await userToFollow.save();
-            await curUser.save();
-
-            return res.send(success(200, "User Unfollowed"));
         } else {
             userToFollow.followers.push(curUserId);
             curUser.followings.push(userIdToFollow);
-
-            await userToFollow.save();
-            await curUser.save();
-
-            return res.send(success(200, "User Followed"));
         }
+
+        await userToFollow.save();
+        await curUser.save();
+
+        return res.send(success(200, {user: userToFollow}))
     } catch (e) {
         console.log(e);
         return res.send(error(500, e.message));
@@ -51,15 +46,28 @@ const followOrUnfollowUserController = async (req, res) => {
 const getPostsOfFollowing = async (req, res) => {
     try {
         const curUserId = req._id;
-        const curUser = await User.findById(curUserId);
+        const curUser = await User.findById(curUserId).populate("followings");
 
-        const posts = await Post.find({
+        const fullPosts = await Post.find({
             owner: {
                 $in: curUser.followings,
             },
+        }).populate('owner');
+
+        const posts = fullPosts
+            .map((item) => mapPostOutput(item, req._id))
+            .reverse();
+        
+        const followingsIds = curUser.followings.map((item) => item._id);
+        followingsIds.push(req._id);
+
+        const suggestions = await User.find({
+            _id: {
+                $nin: followingsIds,
+            },
         });
 
-        return res.send(success(200, posts));
+        return res.send(success(200, {...curUser._doc, suggestions, posts}));
     } catch (error) {
         console.log(e);
         return res.send(error(500, e.message));
@@ -135,13 +143,12 @@ const deleteMyProfile = async (req, res) => {
         // delete user
         await curUser.remove();
 
-        res.clearCookie('jwt', {
+        res.clearCookie("jwt", {
             httpOnly: true,
             secure: true,
         });
 
-        return res.send(success(200, 'user deleted'))
-
+        return res.send(success(200, "user deleted"));
     } catch (error) {
         console.log(e);
         return res.send(error(500, e.message));
@@ -151,62 +158,62 @@ const deleteMyProfile = async (req, res) => {
 const getMyInfo = async (req, res) => {
     try {
         const user = await User.findById(req._id);
-        return res.send(success(200, {user}))
+        return res.send(success(200, { user }));
     } catch (e) {
         return res.send(error(500, e.message));
     }
-    
-}
+};
 
 const updateUserProfile = async (req, res) => {
     try {
-        const {name, bio, userImg} = req.body;
+        const { name, bio, userImg } = req.body;
 
-        
         const user = await User.findById(req._id);
 
-        if(name) {
+        if (name) {
             user.name = name;
         }
-        if(bio) {
+        if (bio) {
             user.bio = bio;
         }
-        if(userImg) {
+        if (userImg) {
             const cloudImg = await cloudinary.uploader.upload(userImg, {
-                folder: 'profileImg'
-            })
+                folder: "profileImg",
+            });
             user.avatar = {
                 url: cloudImg.secure_url,
-                publicId: cloudImg.public_id
-            }
+                publicId: cloudImg.public_id,
+            };
         }
         await user.save();
-        return res.send(success(200, {user}))
-
+        return res.send(success(200, { user }));
     } catch (e) {
+        console.log('put e', e);
         return res.send(error(500, e.message));
     }
-}
+};
 
 const getUserProfile = async (req, res) => {
     try {
         const userId = req.body.userId;
         const user = await User.findById(userId).populate({
-            path: 'posts',
+            path: "posts",
             populate: {
-                path: 'owner'
-            }
+                path: "owner",
+            },
         });
 
         const fullPosts = user.posts;
-        const posts = fullPosts.map(item => mapPostOutput(item, req._id)).reverse();
+        const posts = fullPosts
+            .map((item) => mapPostOutput(item, req._id))
+            .reverse();
 
-        return res.send(success(200, {...user._doc, posts}))
-        
+        return res.send(success(200, { ...user._doc, posts }));
     } catch (e) {
+        console.log('error put', e);
         return res.send(error(500, e.message));
     }
-}
+};
 
 module.exports = {
     followOrUnfollowUserController,
@@ -216,5 +223,5 @@ module.exports = {
     deleteMyProfile,
     getMyInfo,
     updateUserProfile,
-    getUserProfile
+    getUserProfile,
 };
