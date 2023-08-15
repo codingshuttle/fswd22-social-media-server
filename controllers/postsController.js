@@ -107,7 +107,7 @@ const deletePost = async (req, res) => {
         const index = curUser.posts.indexOf(postId);
         curUser.posts.splice(index, 1);
         await curUser.save();
-        await post.remove();
+        await post.deleteOne();
 
         return res.send(success(200, "post deleted successfully"));
     } catch (e) {
